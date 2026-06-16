@@ -11,4 +11,5 @@ export const SKINS: TarotSkin[] = [
   { name: "Sola Busca (MAJOR)", folder: "sola", extension: "jpg" },
   { name: "JoJo (MAJOR)", folder: "jojo", extension: "png" },
   { name: "DELTARUNE (MAJOR)", folder: "deltarune", extension: "png" },
+  { name: "UNDERTALE (MAJOR)", folder: "undertale", extension: "png" },
 ]
