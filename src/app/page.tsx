@@ -133,6 +133,7 @@ export default function Home() {
   const ambientRef = useRef<HTMLAudioElement | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const lastTapRef = useRef<{ [key: string]: number }>({});
+  const [isMobile, setIsMobile] = useState(false);
 
   const playSound = (file: string) => {
     const audio = new Audio(`/sounds/${file}`);
@@ -141,6 +142,9 @@ export default function Home() {
   };
 
   useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile(); 
+    window.addEventListener("resize", checkMobile);
     const t1 = setTimeout(() => setIntroStage("center"), 800);
     
     const t2 = setTimeout(() => {
@@ -363,7 +367,7 @@ export default function Home() {
             >
               <motion.div 
                 animate={{ 
-                  x: showCinematics ? (window.innerWidth < 768 ? 14 : 18) : 2, 
+                  x: showCinematics ? (isMobile ? 14 : 18) : 2, 
                   backgroundColor: showCinematics ? "#f59e0b" : "#3f3f46" 
                 }}
                 className="absolute top-0 md:top-0.5 w-2.5 h-2.5 rounded-full"
@@ -427,7 +431,7 @@ export default function Home() {
             >
               <motion.div 
                 animate={{ 
-                  x: allowReversed ? (window.innerWidth < 768 ? 20 : 24) : 4,
+                  x: allowReversed ? (isMobile ? 20 : 24) : 4,
                   backgroundColor: allowReversed ? "#f59e0b" : "#3f3f46" 
                 }}
                 className="absolute top-0.75 md:top-1 w-3 md:w-4 h-3 md:h-4 rounded-full shadow-lg"
