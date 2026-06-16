@@ -1,15 +1,13 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MAJOR_ARCANA, MINOR_ARCANA, FULL_DECK } from "../deck";
 import { SKINS, TarotSkin } from "../skins";
 
-// --- CONSTANTS ---
-const DEFAULT_SKIN = SKINS[0]; // Assuming the first skin is the default
+const DEFAULT_SKIN = SKINS[0];
 
-// --- TYPES ---
 type DeckType = "Major" | "Minor" | "Full";
 
 type DeckInstance = {
@@ -32,9 +30,9 @@ type TarotCard = {
   backGradient: string;
   borderColor: string;
   skinFolder: string;
+  skinExtension: string;
 };
 
-// --- HELPERS ---
 function shuffle(array: string[]) {
   const newArr = [...array];
   for (let i = newArr.length - 1; i > 0; i--) {
@@ -44,8 +42,8 @@ function shuffle(array: string[]) {
   return newArr;
 }
 
-function formatFileName(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "") + ".jpg";
+function formatFileName(name: string, ext: string = "jpg") {
+  return name.toLowerCase().replace(/\s+/g, "") + "." + ext;
 }
 
 function getDeckShadow(count: number, color: string) {
@@ -63,21 +61,64 @@ function generateNewCard(
   currentMaxZ: number,
   backGradient: string,
   borderColor: string,
-  skinFolder: string
+  skinExtension: string,
+  skinFolder: string,
+  isReversed: boolean 
 ): TarotCard {
   return {
     id: Math.random().toString(36).substring(2, 9),
     name: name,
     isFlipped: false,
-    isReversed: Math.random() > 0.8,
+    isReversed: isReversed,
     zIndex: currentMaxZ + 1,
     x: (Math.random() - 0.5) * 150,
     y: (Math.random() - 0.5) * 150,
     backGradient,
     borderColor,
     skinFolder,
+    skinExtension: skinExtension,
   };
 }
+
+const DustParticles = () => {
+  const [particles, setParticles] = useState<{ left: string; top: string; duration: number; delay: number; opacity: number }[]>([]);
+
+  useEffect(() => {
+    // Generate particles only on the client to avoid hydration error
+    const generated = Array.from({ length: 30 }).map(() => ({
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      duration: 15 + Math.random() * 20,
+      delay: Math.random() * 10,
+      opacity: 0.1 + Math.random() * 0.4
+    }));
+    setParticles(generated);
+  }, []);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+      {particles.map((p, i) => (
+        <motion.div
+          key={i}
+          className="absolute w-1 h-1 bg-white rounded-full blur-[1px]"
+          initial={{ opacity: 0 }}
+          animate={{
+            x: [0, 50, -50, 0],
+            y: [0, -50, 50, 0],
+            opacity: [0, p.opacity, 0],
+          }}
+          transition={{
+            duration: p.duration,
+            repeat: Infinity,
+            delay: p.delay,
+            ease: "linear",
+          }}
+          style={{ left: p.left, top: p.top }}
+        />
+      ))}
+    </div>
+  );
+};
 
 export default function Home() {
   const [introStage, setIntroStage] = useState<"black" | "center" | "moving" | "done">("black");
@@ -86,25 +127,61 @@ export default function Home() {
   const [maxZ, setMaxZ] = useState(1);
   const [selectedSkin, setSelectedSkin] = useState<TarotSkin>(SKINS[0]);
   const [isSkinMenuOpen, setIsSkinMenuOpen] = useState(false);
+  const [allowReversed, setAllowReversed] = useState(true);
+  const [revealedMajors, setRevealedMajors] = useState<string[]>([]);
+  const [cinematicCard, setCinematicCard] = useState<TarotCard | null>(null);
+  const [showCinematics, setShowCinematics] = useState(true);
+  const ambientRef = useRef<HTMLAudioElement | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
 
-  useEffect(() => {
-    const t1 = setTimeout(() => setIntroStage("center"), 800);
-    const t2 = setTimeout(() => {
-      setActiveDecks([
-        {
-          id: "Major",
-          cards: shuffle(MAJOR_ARCANA),
-          gradient: "#450a0a",
-          borderColor: "border-red-500/40",
-          shadowColor: "#2a0000",
-          isShuffling: false,
-        },
-      ]);
-      setIntroStage("moving");
-    }, 2000);
-    const t3 = setTimeout(() => setIntroStage("done"), 3200);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, []);
+  const playSound = (file: string) => {
+  const audio = new Audio(`/sounds/${file}`);
+  audio.volume = 0.4;
+  audio.play().catch(() => {});
+};
+useEffect(() => {
+  const t1 = setTimeout(() => setIntroStage("center"), 800);
+  
+  const t2 = setTimeout(() => {
+    setActiveDecks([{
+      id: "Major",
+      cards: shuffle(MAJOR_ARCANA),
+      gradient: "#450a0a",
+      borderColor: "border-red-500/40",
+      shadowColor: "#2a0000",
+      isShuffling: false,
+    }]);
+    setIntroStage("moving");
+  }, 2000);
+
+  const t3 = setTimeout(() => setIntroStage("done"), 3200);
+
+  return () => { 
+    clearTimeout(t1); 
+    clearTimeout(t2); 
+    clearTimeout(t3); 
+  };
+}, []);
+
+useEffect(() => {
+  const ambient = ambientRef.current;
+  if (!ambient) return;
+
+  ambient.muted = isMuted;
+  ambient.volume = 0.4; 
+
+  if (introStage === "done" && !isMuted) {
+    ambient.play().catch(() => {
+
+      console.log("Ambient audio waiting for user interaction to unlock...");
+    });
+  } 
+  
+  if (isMuted) {
+    ambient.pause();
+  }
+
+}, [introStage, isMuted]);
 
   const toggleDeck = (type: DeckType) => {
     const exists = activeDecks.find((d) => d.id === type);
@@ -130,21 +207,49 @@ export default function Home() {
   };
 
   const drawCard = (deckId: DeckType) => {
-    const targetDeck = activeDecks.find((d) => d.id === deckId);
-    if (!targetDeck || targetDeck.cards.length === 0 || targetDeck.isShuffling) return;
+    if (ambientRef.current && ambientRef.current.paused && !isMuted) {
+    ambientRef.current.play().catch(() => {});
+  }
+  const targetDeck = activeDecks.find((d) => d.id === deckId);
+  if (!targetDeck || targetDeck.cards.length === 0 || targetDeck.isShuffling) return;
 
-    const newCard = generateNewCard(targetDeck.cards[0], maxZ, targetDeck.gradient, targetDeck.borderColor, selectedSkin.folder);
-    setMaxZ((prev) => prev + 1);
-    setCardsOnTable((prev) => [...prev, newCard]);
-    setActiveDecks((prev) => prev.map((d) => (d.id === deckId ? { ...d, cards: d.cards.slice(1) } : d)));
-  };
+   playSound("draw.mp3");
 
-  const flipCard = (id: string) => {
-    setCardsOnTable((prev) => prev.map((c) => (c.id === id ? { ...c, isFlipped: !c.isFlipped, zIndex: maxZ + 1 } : c)));
-    setMaxZ((prev) => prev + 1);
-  };
+  const shouldBeReversed = allowReversed ? Math.random() > 0.7 : false;
+
+  const newCard = generateNewCard(
+    targetDeck.cards[0], 
+    maxZ, 
+    targetDeck.gradient, 
+    targetDeck.borderColor,
+    selectedSkin.extension, 
+    selectedSkin.folder,
+    shouldBeReversed 
+  );
+
+  setMaxZ((prev) => prev + 1);
+  setCardsOnTable((prev) => [...prev, newCard]);
+  setActiveDecks((prev) => prev.map((d) => (d.id === deckId ? { ...d, cards: d.cards.slice(1) } : d)));
+};
+
+const flipCard = (id: string) => {
+  const card = cardsOnTable.find(c => c.id === id);
+  if (!card) return;
+    playSound("flip.mp3");
+
+  const isMajor = MAJOR_ARCANA.includes(card.name);
+  if (showCinematics && !card.isFlipped && isMajor && !revealedMajors.includes(card.name)) {
+    setCinematicCard(card);
+    setRevealedMajors(prev => [...prev, card.name]);
+    setTimeout(() => setCinematicCard(null), 1000);
+  }
+
+  setCardsOnTable((prev) => prev.map((c) => (c.id === id ? { ...c, isFlipped: !c.isFlipped, zIndex: maxZ + 1 } : c)));
+  setMaxZ((prev) => prev + 1);
+};
 
   const shuffleIndividualDeck = (type: DeckType) => {
+    playSound("shuffle.mp3");
     setActiveDecks((prev) => prev.map((d) => d.id === type ? { ...d, isShuffling: true } : d));
     setTimeout(() => {
       setActiveDecks((prev) =>
@@ -154,15 +259,20 @@ export default function Home() {
   };
 
   const resetAll = () => {
+  setCardsOnTable(prev => prev.map(c => ({ ...c, x: -1000, opacity: 0 })));
+
+  setTimeout(() => {
     setCardsOnTable([]);
     setActiveDecks((prev) => prev.map((d) => {
       const base = d.id === "Major" ? MAJOR_ARCANA : d.id === "Minor" ? MINOR_ARCANA : FULL_DECK;
       return { ...d, cards: shuffle(base) };
     }));
-  };
+  }, 500);
+};
 
   return (
     <main className="flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans relative">
+      <audio ref={ambientRef} src="/sounds/ambient.mp3" loop preload="auto" />
       <AnimatePresence>
         {introStage !== "done" && (
           <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1 }} className="fixed inset-0 bg-black z-50 pointer-events-none" />
@@ -186,11 +296,11 @@ export default function Home() {
               style={{ boxShadow: getDeckShadow(20, "#2a0000") }}
             >
               <img 
-                src={`/images/${selectedSkin.folder}/back.jpg`} 
+                src={`/images/${selectedSkin.folder}/back.${selectedSkin.extension}`} 
                 onError={(e) => {
                     const target = e.currentTarget as HTMLImageElement;
-                    if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.jpg`) {
-                        target.src = `/images/${DEFAULT_SKIN.folder}/back.jpg`;
+                    if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`) {
+                        target.src = `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`;
                     }
                 }}
                 draggable={false} alt="" className="absolute inset-0 w-full h-full object-cover opacity-80 rounded-2xl" 
@@ -201,63 +311,133 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      {/* HEADER */}
-      <motion.header
-        animate={{ opacity: introStage === "done" ? 1 : 0, y: introStage === "done" ? 0 : -20 }}
-        className="h-24 bg-zinc-900 border-b border-zinc-800 flex items-center z-40 shadow-xl"
+      {/* 3. HEADER */}
+<motion.header
+  animate={{ opacity: introStage === "done" ? 1 : 0, y: introStage === "done" ? 0 : -20 }}
+  className="h-24 bg-zinc-900 border-b border-zinc-800 flex items-center z-40 shadow-xl"
+>
+  {/* Left Section: Deck Select */}
+  <div className="w-60 flex justify-center items-center h-full border-r border-zinc-800 flex-col">
+    <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-2">Select your deck</span>
+    <div className="flex gap-1 bg-black p-1 rounded-xl border border-zinc-800">
+      {(["Major", "Minor", "Full"] as DeckType[]).map((type) => (
+        <button
+          key={type}
+          onClick={() => toggleDeck(type)}
+          className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all uppercase ${
+            activeDecks.find((d) => d.id === type) ? "text-amber-400 bg-zinc-800" : "text-zinc-600"
+          }`}
+        >
+          {type}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  {/* Center Section: Title + Toggle */}
+  <div className="flex-1 flex flex-col items-center justify-center gap-2">
+    <h1 className="text-2xl font-serif font-black text-amber-500 tracking-[0.4em] uppercase text-center leading-none">
+      Tarot Reader
+    </h1>
+    
+    {/* Cinematic Toggle moved here */}
+    <div className="flex items-center gap-3 px-3 py-1 rounded-full bg-black/20 border border-white/5">
+      <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-zinc-500">
+        Cinematic Major Reveals
+      </span>
+      <button 
+        onClick={() => setShowCinematics(!showCinematics)}
+        className="relative w-8 h-4 bg-zinc-900 rounded-full border border-zinc-700 transition-colors"
       >
-        <div className="w-60 flex justify-center items-center h-full border-r border-zinc-800 flex-col">
-          <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-2">Select your deck</span>
-          <div className="flex gap-1 bg-black p-1 rounded-xl border border-zinc-800">
-            {(["Major", "Minor", "Full"] as DeckType[]).map((type) => (
-              <button
-                key={type}
-                onClick={() => toggleDeck(type)}
-                className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all uppercase ${
-                  activeDecks.find((d) => d.id === type) ? "text-amber-400 bg-zinc-800" : "text-zinc-600"
-                }`}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex-1 flex justify-center"><h1 className="text-2xl font-serif font-black text-amber-500 tracking-[0.4em] uppercase text-center">Tarot Reader</h1></div>
-        <div className="w-60 flex justify-center items-center relative">
-          <button onClick={() => setIsSkinMenuOpen(!isSkinMenuOpen)} className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-amber-500/50 transition-all">Skin: {selectedSkin.name}</button>
-          <AnimatePresence>
-            {isSkinMenuOpen && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute top-14 bg-zinc-900 border border-zinc-800 p-2 rounded-xl shadow-2xl min-w-35 z-50">
-                {SKINS.map((skin) => (
-                  <button key={skin.name} onClick={() => { setSelectedSkin(skin); setIsSkinMenuOpen(false); }} className="w-full text-left px-3 py-2 text-[10px] uppercase font-bold text-zinc-400 hover:text-amber-400 hover:bg-white/5 rounded-md transition-all">{skin.name}</button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.header>
+        <motion.div 
+          animate={{ 
+            x: showCinematics ? 18 : 2, 
+            backgroundColor: showCinematics ? "#f59e0b" : "#3f3f46" 
+          }}
+          className="absolute top-0.5 w-2.5 h-2.5 rounded-full"
+        />
+      </button>
+    </div>
+  </div>
+
+  {/* Right Section: Skin Selector */}
+  <div className="w-60 flex justify-center items-center relative">
+    <button 
+      onClick={() => setIsMuted(!isMuted)}
+      className="p-2 hover:bg-white/5 rounded-full transition-colors group"
+      title={isMuted ? "Unmute Ambient" : "Mute Ambient"}
+    >
+      {isMuted ? (
+        <svg className="w-5 h-5 text-zinc-500 group-hover:text-amber-500" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+      ) : (
+        <svg className="w-5 h-5 text-amber-500 group-hover:text-amber-400" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      )}
+    </button>
+    <button onClick={() => setIsSkinMenuOpen(!isSkinMenuOpen)} className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:border-amber-500/50 transition-all">
+      Card Skin: {selectedSkin.name}
+    </button>
+    <AnimatePresence>
+      {isSkinMenuOpen && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="absolute top-14 bg-zinc-900 border border-zinc-800 p-2 rounded-xl shadow-2xl min-w-35 z-50">
+          {SKINS.map((skin) => (
+            <button key={skin.name} onClick={() => { setSelectedSkin(skin); setIsSkinMenuOpen(false); }} className="w-full text-left px-3 py-2 text-[10px] uppercase font-bold text-zinc-400 hover:text-amber-400 hover:bg-white/5 rounded-md transition-all">
+              {skin.name}
+            </button>
+          ))}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
+</motion.header>
 
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR */}
-        <aside className="w-60 bg-zinc-900/40 border-r border-zinc-800 flex flex-col justify-evenly items-center p-6 z-30 shadow-inner">
-          <AnimatePresence>
+        <aside className="w-60 bg-zinc-900/40 border-r border-zinc-800 flex flex-col items-center p-6 z-30 shadow-inner">
+        
+        {/* REVERSED TOGGLE */}
+        <motion.div 
+          animate={{ opacity: introStage === "done" ? 1 : 0 }}
+          className="w-full mb-8 flex flex-col items-center border-b border-zinc-800/50 pb-6"
+        >
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">Reversed Cards?</span>
+          <button 
+            onClick={() => setAllowReversed(!allowReversed)}
+            className="relative w-12 h-6 bg-black rounded-full border border-zinc-800 transition-colors duration-300"
+          >
+            <motion.div 
+              animate={{ 
+                x: allowReversed ? 24 : 4,
+                backgroundColor: allowReversed ? "#f59e0b" : "#3f3f46" 
+              }}
+              className="absolute top-1 w-4 h-4 rounded-full shadow-lg"
+            />
+          </button>
+          <span className={`text-[8px] font-bold mt-2 uppercase tracking-widest transition-colors ${allowReversed ? 'text-amber-500' : 'text-zinc-600'}`}>
+            {allowReversed ? 'Enabled' : 'Disabled'}
+          </span>
+        </motion.div>
+          <AnimatePresence mode="popLayout">
             {activeDecks.map((deck) => (
               <motion.div
                 key={deck.id}
+                layout
                 layoutId={deck.id === "Major" ? "shared-major-deck" : undefined}
                 className="flex flex-col items-center w-full"
                 transition={{ layout: { duration: 1.2, ease: [0.43, 0.13, 0.23, 0.96] } }}
               >
                 <motion.div
+                key={selectedSkin.name}
+                initial={{ rotateY: 90 }}
                   onClick={() => drawCard(deck.id)}
                   animate={
                     deck.isShuffling
                       ? { 
                           x: [0, -8, 8, -10, 10, -10, 10, 0],
                           y: [0, -3, 3, -3, 3, 0],
-                          rotate: [0, -3, 3, -2, 2, -3, 3, 0]
+                          rotate: [0, -3, 3, -2, 2, -3, 3, 0],
+                          rotateY: 0
                         }
-                      : { x: 0, y: 0, rotate: 0 }
+                      : { x: 0, y: 0, rotate: 0, rotateY: 0 }
                   }
                   transition={{ duration: 0.7, ease: "easeInOut" }}
                   className={`w-28 h-40 bg-zinc-900 rounded-2xl border-2 ${
@@ -269,11 +449,11 @@ export default function Home() {
                   }}
                 >
                   <img 
-                    src={`/images/${selectedSkin.folder}/back.jpg`} 
+                    src={`/images/${selectedSkin.folder}/back.${selectedSkin.extension}`}
                     onError={(e) => {
                         const target = e.currentTarget as HTMLImageElement;
-                        if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.jpg`) {
-                            target.src = `/images/${DEFAULT_SKIN.folder}/back.jpg`;
+                        if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`) {
+                            target.src = `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`;
                         }
                     }}
                     draggable={false} alt="" className="absolute inset-0 w-full h-full object-cover rounded-[14px]" 
@@ -294,6 +474,17 @@ export default function Home() {
 
         {/* TABLETOP */}
         <motion.section animate={{ opacity: introStage === "done" ? 1 : 0 }} className="flex-1 relative bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-zinc-900 to-black overflow-hidden">
+          <div 
+            className="absolute inset-0 opacity-40 mix-blend-luminosity pointer-events-none"
+            style={{ 
+              backgroundImage: "url('/images/wood.jpg')", 
+              backgroundSize: 'cover',
+              backgroundPosition: 'center' 
+            }}
+          />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.8)_100%)] pointer-events-none z-0" />
+          <DustParticles />
+
           <AnimatePresence>
             {cardsOnTable.map((card) => (
               <motion.div
@@ -316,11 +507,11 @@ export default function Home() {
           {/* Back of Card */}
           <div className={`absolute inset-0 bg-zinc-900 rounded-2xl border-4 ${card.borderColor} shadow-2xl overflow-hidden`} style={{ backfaceVisibility: "hidden" }}>
             <img 
-                src={`/images/${card.skinFolder}/back.jpg`} 
+                src={`/images/${card.skinFolder}/back.${card.skinExtension}`} 
                 onError={(e) => {
                     const target = e.currentTarget as HTMLImageElement;
-                    if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.jpg`) {
-                        target.src = `/images/${DEFAULT_SKIN.folder}/back.jpg`;
+                    if (target.src !== `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`) {
+                        target.src = `/images/${DEFAULT_SKIN.folder}/back.${DEFAULT_SKIN.extension}`;
                     }
                 }}
                 alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover pointer-events-none" 
@@ -331,10 +522,10 @@ export default function Home() {
           {/* Front of Card */}
           <div className="absolute inset-0 rounded-2xl border-4 border-amber-600/50 shadow-2xl bg-[#fcf5e5] overflow-hidden" style={{ backfaceVisibility: "hidden", transform: `rotateY(180deg) ${card.isReversed ? "rotateZ(180deg)" : ""}` }}>
             <img 
-                src={`/images/${card.skinFolder}/${formatFileName(card.name)}`} 
+                src={`/images/${card.skinFolder}/${formatFileName(card.name, card.skinExtension)}`}
                 onError={(e) => {
                     const target = e.currentTarget as HTMLImageElement;
-                    const fallbackSrc = `/images/${DEFAULT_SKIN.folder}/${formatFileName(card.name)}`;
+                    const fallbackSrc = `/images/${DEFAULT_SKIN.folder}/${formatFileName(card.name, DEFAULT_SKIN.extension)}`;
                     if (target.src !== fallbackSrc) {
                         target.src = fallbackSrc;
                     }
@@ -371,6 +562,43 @@ export default function Home() {
           <AnimatePresence>{cardsOnTable.length > 0 && (<motion.button initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} onClick={resetAll} className="fixed bottom-8 right-8 bg-zinc-100 hover:bg-red-600 hover:text-white text-zinc-900 font-bold px-5 py-2.5 rounded-xl shadow-2xl z-50 transition-all active:scale-95 uppercase text-[10px] tracking-widest">Clear Tabletop</motion.button>)}</AnimatePresence>
         </motion.section>
       </div>
+      <AnimatePresence>
+  {cinematicCard && (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-100 flex items-center justify-center bg-black/90 backdrop-blur-xl pointer-events-none"
+    >
+      <motion.div
+        // Faster transition: duration 0.8s
+        initial={{ scale: 0.5, y: 100, rotateY: 180, opacity: 0 }}
+        animate={{ scale: 1.1, y: 0, rotateY: 0, opacity: 1 }}
+        exit={{ scale: 1.5, opacity: 0, filter: "blur(10px)" }}
+        transition={{ type: "spring", stiffness: 200, damping: 25, duration: 0.8 }}
+        className="relative w-64 h-105 flex flex-col items-center justify-center"
+      >
+        <div className="relative w-64 h-96">
+          <img 
+            src={`/images/${cinematicCard.skinFolder}/${formatFileName(cinematicCard.name, cinematicCard.skinExtension)}`} 
+            style={{ transform: cinematicCard.isReversed ? 'rotate(180deg)' : 'none' }}
+            className="w-full h-full object-fill rounded-3xl border-4 border-amber-400 shadow-[0_0_60px_rgba(251,191,36,0.4)]"
+          />
+        </div>
+
+        {/* Improved Typography: Using wider container and tighter leading */}
+        <div className="absolute -bottom-24 w-[150%] text-center">
+          <h2 className="font-serif text-3xl sm:text-4xl text-amber-400 tracking-[0.3em] uppercase drop-shadow-[0_0_15px_rgba(0,0,0,1)] leading-tight">
+            {cinematicCard.name}
+            {cinematicCard.isReversed && (
+              <span className="block text-sm mt-2 opacity-60 tracking-[0.5em] italic">(Reversed)</span>
+            )}
+          </h2>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
     </main>
   );
 }
